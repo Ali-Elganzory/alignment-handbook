@@ -44,7 +44,7 @@ import transformers
 from transformers import set_seed
 from transformers.trainer_utils import get_last_checkpoint
 
-from alignment import ScriptArguments, SFTConfig, get_dataset, get_model, get_tokenizer
+from alignment import ScriptArguments, SFTConfig, SaveModelWeightsCallback, get_dataset, get_model, get_tokenizer
 from trl import ModelConfig, SFTTrainer, TrlParser, get_peft_config, setup_chat_format
 
 
@@ -109,6 +109,7 @@ def main(script_args, training_args, model_args):
         eval_dataset=(dataset[script_args.dataset_test_split] if training_args.eval_strategy != "no" else None),
         processing_class=tokenizer,
         peft_config=get_peft_config(model_args),
+        callbacks=[SaveModelWeightsCallback()],
     )
 
     ###############

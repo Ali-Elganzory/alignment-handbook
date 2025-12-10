@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import logging
+import textwrap
 
 import datasets
 from datasets import DatasetDict, concatenate_datasets
@@ -47,13 +48,52 @@ def get_dataset(args: ScriptArguments) -> DatasetDict:
                 dataset_config.config,
                 split=dataset_config.split,
             )
+
+            # 1. COLUMN: Select the initial columns if provided
             if dataset_config.columns is not None:
                 ds = ds.select_columns(dataset_config.columns)
+
+            # 2. WEIGHT: Subsample the dataset if provided
             if dataset_config.weight is not None:
                 ds = ds.shuffle(seed=seed).select(range(int(len(ds) * dataset_config.weight)))
                 logger.info(
                     f"Subsampled dataset '{dataset_config.id}' (config: {dataset_config.config}) with weight={dataset_config.weight} to {len(ds)} examples"
                 )
+
+            # 3. COLUMN: Rename columns if needed
+            if dataset_config.rename_columns is not None:
+                for column, new_column in dataset_config.rename_columns.items():
+                    ds = ds.rename_column(column, new_column)
+
+            # 4. TRANSFORM: Apply the transform function if provided
+            if dataset_config.transform_code is not None:
+                transform_fn = None
+                local_scope = {}
+                exec(textwrap.dedent(dataset_config.transform_code), {}, local_scope)
+                for _, value in local_scope.items():
+                    if callable(value):
+                        transform_fn = value
+                        break
+                if transform_fn is not None:
+                    ds = ds.map(transform_fn)
+                else:
+                    raise ValueError(
+                        "No transform function found in the transform code"
+                    )
+
+            # 5. COLUMN: Select the final columns if provided
+            if dataset_config.final_columns is not None:
+                ds = ds.select_columns(dataset_config.final_columns)
+
+            # 6. FILTER: Remove samples where the 'messages' column is empty or None
+            # This efficiently drops the rows we marked as invalid
+            if isinstance(ds.column_names, dict):
+                first_split = list(ds.column_names.keys())[0]
+                first_split_column_names = ds[first_split].column_names
+            else:
+                first_split_column_names = ds.column_names
+            if "messages" in first_split_column_names:
+                ds = ds.filter(lambda x: x["messages"] and len(x["messages"]) > 0)
 
             datasets_list.append(ds)
 

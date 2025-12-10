@@ -40,8 +40,40 @@ class DatasetConfig:
     id: str
     config: Optional[str] = None
     split: str = "train"
-    columns: Optional[list[str]] = None
     weight: Optional[float] = None
+    columns: Optional[list[str]] = None
+    """Select only the initial columns to keep.
+    Before applying the transform code.
+    Format:
+    ```python
+    ['column_name1', 'column_name2', ...]
+    ```
+    """
+    rename_columns: Optional[dict[str, str]] = None
+    """Rename columns' names.
+    Format:
+    ```python
+    {
+      'column_name': 'new_column_name',
+      ...
+    }
+    ```
+    """
+    final_columns: Optional[list[str]] = None
+    """Select only the final columns to keep.
+    Format:
+    ```python
+    ['column_name1', 'column_name2', ...]
+    ```
+    """
+    transform_code: Optional[str] = None
+    """Code to transform samples to a new format.
+    Format:
+    ```python
+    def transform_fn(sample: dict[str, Any]) -> dict[str, Any]:
+        return sample
+    ```
+    """
 
 
 @dataclass
@@ -108,6 +140,9 @@ class ScriptArguments(trl.ScriptArguments):
                             split=dataset_config.get("split", "train"),
                             columns=dataset_config.get("columns"),
                             weight=dataset_config.get("weight", 1.0),
+                            rename_columns=dataset_config.get("rename_columns", None),
+                            transform_code=dataset_config.get("transform_code", None),
+                            final_columns=dataset_config.get("final_columns", None),
                         )
                     )
             else:
