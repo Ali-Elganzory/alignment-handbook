@@ -9,6 +9,10 @@ logger = logging.getLogger(__name__)
 
 class SaveModelWeightsCallback(TrainerCallback):
     def on_save(self, args, state, control, **kwargs):
+        if hasattr(args, "local_rank") and args.local_rank != 0:
+            logger.info(f"Skipping lightweight model weights copy for rank {args.local_rank}")
+            return
+            
         logger.info(f"Copying lightweight model weights to {args.output_dir}")
 
         # The trainer just saved a checkpoint to this folder
