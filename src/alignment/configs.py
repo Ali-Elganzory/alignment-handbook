@@ -39,6 +39,7 @@ class DatasetConfig:
 
     id: str
     config: Optional[str] = None
+    data_dir: Optional[str] = None
     split: str = "train"
     weight: Optional[float] = None
     columns: Optional[list[str]] = None
@@ -114,15 +115,22 @@ class ScriptArguments(trl.ScriptArguments):
 
     dataset_mixture: Optional[dict[str, Any]] = field(
         default=None,
-        metadata={"help": "Configuration for creating dataset mixtures with advanced options like shuffling."},
+        metadata={
+            "help": "Configuration for creating dataset mixtures with advanced options like shuffling."
+        },
     )
 
     def __post_init__(self):
         if self.dataset_name is None and self.dataset_mixture is None:
-            raise ValueError("Either `dataset_name` or `dataset_mixture` must be provided")
+            raise ValueError(
+                "Either `dataset_name` or `dataset_mixture` must be provided"
+            )
 
         if self.dataset_mixture is not None:
-            if not isinstance(self.dataset_mixture, dict) or "datasets" not in self.dataset_mixture:
+            if (
+                not isinstance(self.dataset_mixture, dict)
+                or "datasets" not in self.dataset_mixture
+            ):
                 raise ValueError(
                     "dataset_mixture must be a dictionary with a 'datasets' key. "
                     "Expected format: {'datasets': [...], 'seed': int}"
@@ -137,6 +145,7 @@ class ScriptArguments(trl.ScriptArguments):
                         DatasetConfig(
                             id=dataset_config.get("id"),
                             config=dataset_config.get("config"),
+                            data_dir=dataset_config.get("data_dir", None),
                             split=dataset_config.get("split", "train"),
                             columns=dataset_config.get("columns"),
                             weight=dataset_config.get("weight", 1.0),
@@ -155,14 +164,18 @@ class ScriptArguments(trl.ScriptArguments):
             )
 
             # Check that column names are consistent across all dataset configs
-            columns_sets = [set(dataset.columns) for dataset in datasets_list if dataset.columns is not None]
-            if columns_sets:
-                first_columns = columns_sets[0]
-                if not all(columns == first_columns for columns in columns_sets):
-                    raise ValueError(
-                        "Column names must be consistent across all dataset configurations in a mixture. "
-                        f"Found different column sets: {[list(cols) for cols in columns_sets]}"
-                    )
+            # columns_sets = [
+            #     set(dataset.columns)
+            #     for dataset in datasets_list
+            #     if dataset.columns is not None
+            # ]
+            # if columns_sets:
+            #     first_columns = columns_sets[0]
+            #     if not all(columns == first_columns for columns in columns_sets):
+            #         raise ValueError(
+            #             "Column names must be consistent across all dataset configurations in a mixture. "
+            #             f"Found different column sets: {[list(cols) for cols in columns_sets]}"
+            #         )
 
 
 @dataclass
@@ -171,7 +184,9 @@ class SFTConfig(trl.SFTConfig):
     args for callbacks, benchmarks etc
     """
 
-    chat_template: Optional[str] = field(default=None, metadata={"help": "The chat template to use."})
+    chat_template: Optional[str] = field(
+        default=None, metadata={"help": "The chat template to use."}
+    )
 
 
 @dataclass
@@ -180,7 +195,9 @@ class DPOConfig(trl.DPOConfig):
     args for callbacks, benchmarks etc
     """
 
-    chat_template: Optional[str] = field(default=None, metadata={"help": "The chat template to use."})
+    chat_template: Optional[str] = field(
+        default=None, metadata={"help": "The chat template to use."}
+    )
 
 
 @dataclass
@@ -189,4 +206,6 @@ class ORPOConfig(trl.ORPOConfig):
     args for callbacks, benchmarks etc
     """
 
-    chat_template: Optional[str] = field(default=None, metadata={"help": "The chat template to use."})
+    chat_template: Optional[str] = field(
+        default=None, metadata={"help": "The chat template to use."}
+    )

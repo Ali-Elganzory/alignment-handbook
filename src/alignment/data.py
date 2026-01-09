@@ -20,7 +20,6 @@ from datasets import DatasetDict, concatenate_datasets
 
 from .configs import ScriptArguments
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -37,15 +36,20 @@ def get_dataset(args: ScriptArguments) -> DatasetDict:
         logger.info(f"Loading dataset: {args.dataset_name}")
         return datasets.load_dataset(args.dataset_name, args.dataset_config)
     elif args.dataset_mixture:
-        logger.info(f"Creating dataset mixture with {len(args.dataset_mixture.datasets)} datasets")
+        logger.info(
+            f"Creating dataset mixture with {len(args.dataset_mixture.datasets)} datasets"
+        )
         seed = args.dataset_mixture.seed
         datasets_list = []
 
         for dataset_config in args.dataset_mixture.datasets:
-            logger.info(f"Loading dataset for mixture: {dataset_config.id} (config: {dataset_config.config})")
+            logger.info(
+                f"Loading dataset for mixture: {dataset_config.id} (config: {dataset_config.config})"
+            )
             ds = datasets.load_dataset(
                 dataset_config.id,
                 dataset_config.config,
+                data_dir=dataset_config.data_dir,
                 split=dataset_config.split,
             )
 
@@ -55,7 +59,9 @@ def get_dataset(args: ScriptArguments) -> DatasetDict:
 
             # 2. WEIGHT: Subsample the dataset if provided
             if dataset_config.weight is not None:
-                ds = ds.shuffle(seed=seed).select(range(int(len(ds) * dataset_config.weight)))
+                ds = ds.shuffle(seed=seed).select(
+                    range(int(len(ds) * dataset_config.weight))
+                )
                 logger.info(
                     f"Subsampled dataset '{dataset_config.id}' (config: {dataset_config.config}) with weight={dataset_config.weight} to {len(ds)} examples"
                 )
@@ -75,7 +81,10 @@ def get_dataset(args: ScriptArguments) -> DatasetDict:
                         transform_fn = value
                         break
                 if transform_fn is not None:
-                    ds = ds.map(transform_fn)
+                    ds = ds.map(
+                        transform_fn,
+                        num_proc=32,
+                    )
                 else:
                     raise ValueError(
                         "No transform function found in the transform code"
@@ -87,20 +96,26 @@ def get_dataset(args: ScriptArguments) -> DatasetDict:
 
             # 6. FILTER: Remove samples where the 'messages' column is empty or None
             # This efficiently drops the rows we marked as invalid
-            if isinstance(ds.column_names, dict):
+            if isinstance(ds, DatasetDict):
                 first_split = list(ds.column_names.keys())[0]
-                first_split_column_names = ds[first_split].column_names
+                first_example = ds[first_split][0]
             else:
-                first_split_column_names = ds.column_names
-            if "messages" in first_split_column_names:
-                ds = ds.filter(lambda x: x["messages"] and len(x["messages"]) > 0)
+                first_example = ds[0]
+
+            if "messages" in first_example:
+                ds = ds.filter(
+                    lambda x: x["messages"] and len(x["messages"]) > 0,
+                    num_proc=32,
+                )
 
             datasets_list.append(ds)
 
         if datasets_list:
             combined_dataset = concatenate_datasets(datasets_list)
             combined_dataset = combined_dataset.shuffle(seed=seed)
-            logger.info(f"Created dataset mixture with {len(combined_dataset)} examples")
+            logger.info(
+                f"Created dataset mixture with {len(combined_dataset)} examples"
+            )
 
             if args.dataset_mixture.test_split_size is not None:
                 combined_dataset = combined_dataset.train_test_split(
