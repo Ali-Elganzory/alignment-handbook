@@ -162,3 +162,7 @@ cython_debug/
 # Temp folders
 data/
 wandb/
+
+# Outputs
+slurm_logs/
+results/
