@@ -67,6 +67,12 @@ CHAT_TEMPLATE = """
 {%- endfor -%}
 """
 
+ADDITIONAL_SPECIAL_TOKENS = [
+    "<|system|>",
+    "<|user|>",
+    "<|assistant|>",
+]
+
 
 def make_base_config() -> dict:
     """Returns a mutable base configuration."""
@@ -79,6 +85,7 @@ def make_base_config() -> dict:
         "trust_remote_code": True,
         # Data arguments
         "chat_template": CHAT_TEMPLATE,
+        "additional_special_tokens": ADDITIONAL_SPECIAL_TOKENS,
         "dataset_mixture": {"datasets": []},
         "dataset_num_proc": 32,
         # SFT trainer config

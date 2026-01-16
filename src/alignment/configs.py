@@ -187,6 +187,9 @@ class SFTConfig(trl.SFTConfig):
     chat_template: Optional[str] = field(
         default=None, metadata={"help": "The chat template to use."}
     )
+    additional_special_tokens: Optional[list[str]] = field(
+        default=None, metadata={"help": "Additional special tokens to add to the tokenizer."}
+    )
 
 
 @dataclass
@@ -197,6 +200,9 @@ class DPOConfig(trl.DPOConfig):
 
     chat_template: Optional[str] = field(
         default=None, metadata={"help": "The chat template to use."}
+    )
+    additional_special_tokens: Optional[list[str]] = field(
+        default=None, metadata={"help": "Additional special tokens to add to the tokenizer."}
     )
 
 

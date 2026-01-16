@@ -97,9 +97,9 @@ def main(script_args, training_args, model_args):
     ###################
     # Model & Tokenizer
     ###################
-    model = get_model(model_args, training_args)
-    ref_model = get_model(model_args, training_args)
     tokenizer = get_tokenizer(model_args, training_args)
+    model = get_model(model_args, training_args, tokenizer)
+    ref_model = get_model(model_args, training_args, tokenizer)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     if script_args.ignore_bias_buffers:

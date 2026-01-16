@@ -31,10 +31,20 @@ def get_tokenizer(model_args: ModelConfig, training_args: SFTConfig) -> PreTrain
     if training_args.chat_template is not None:
         tokenizer.chat_template = training_args.chat_template
 
+    if training_args.additional_special_tokens is not None:
+        tokenizer.add_special_tokens(
+            {"additional_special_tokens": training_args.additional_special_tokens},
+            False,
+        )
+
     return tokenizer
 
 
-def get_model(model_args: ModelConfig, training_args: SFTConfig) -> AutoModelForCausalLM:
+def get_model(
+    model_args: ModelConfig,
+    training_args: SFTConfig,
+    tokenizer: PreTrainedTokenizer,
+) -> AutoModelForCausalLM:
     """Get the model"""
     torch_dtype = (
         model_args.torch_dtype if model_args.torch_dtype in ["auto", None] else getattr(torch, model_args.torch_dtype)
@@ -52,6 +62,11 @@ def get_model(model_args: ModelConfig, training_args: SFTConfig) -> AutoModelFor
     model = AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         **model_kwargs,
+    )
+
+    model.resize_token_embeddings(
+        len(tokenizer),
+        pad_to_multiple_of=64,
     )
 
     return model

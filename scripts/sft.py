@@ -45,7 +45,7 @@ from transformers import set_seed
 from transformers.trainer_utils import get_last_checkpoint
 
 from alignment import ScriptArguments, SFTConfig, SaveModelWeightsCallback, get_dataset, get_model, get_tokenizer
-from trl import ModelConfig, SFTTrainer, TrlParser, get_peft_config, setup_chat_format
+from trl import ModelConfig, SFTTrainer, TrlParser, get_peft_config
 
 
 logger = logging.getLogger(__name__)
@@ -93,11 +93,10 @@ def main(script_args, training_args, model_args):
     # Load model
     ############
     logger.info("*** Loading model ***")
-    model = get_model(model_args, training_args)
+    model = get_model(model_args, training_args, tokenizer)
 
     if tokenizer.chat_template is None:
-        logger.info("No chat template provided, using ChatML.")
-        model, tokenizer = setup_chat_format(model, tokenizer, format="chatml")
+        raise ValueError("Tokenizer chat template is not set")
 
     ############################
     # Initialize the SFT Trainer
@@ -109,7 +108,7 @@ def main(script_args, training_args, model_args):
         eval_dataset=(dataset[script_args.dataset_test_split] if training_args.eval_strategy != "no" else None),
         processing_class=tokenizer,
         peft_config=get_peft_config(model_args),
-        callbacks=[SaveModelWeightsCallback()],
+        # callbacks=[SaveModelWeightsCallback()],
     )
 
     ###############
@@ -143,7 +142,7 @@ def main(script_args, training_args, model_args):
     kwargs = {
         "model_name": training_args.hub_model_id if training_args.push_to_hub else None,
         "dataset_name": script_args.dataset_name,
-        "tags": ["alignment-handbook"],
+        # "tags": ["alignment-handbook"],
     }
     if trainer.accelerator.is_main_process:
         trainer.create_model_card(**kwargs)
