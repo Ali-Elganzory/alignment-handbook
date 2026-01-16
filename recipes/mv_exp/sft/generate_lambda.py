@@ -8,8 +8,11 @@ from typing import Any, Dict, List
 
 import yaml
 
+# Debug mode
+DEBUG_MODE = True
+
 # HuggingFace
-UPLOAD_TO_HF = False
+UPLOAD_TO_HF = True
 HF_USERNAME = "ali-elganzory"
 
 # Distribution
@@ -127,9 +130,7 @@ def make_base_config() -> dict:
         "lr_scheduler_type": "linear",
         "max_length": 4096,
         "warmup_ratio": 0.03,
-        # TODO: MODIFY TO EXPERIMENT TARGET
-        "num_train_epochs": 2,
-        # "max_steps": 10,
+        **({"num_train_epochs": 2} if not DEBUG_MODE else {"max_steps": 10}),
     }
 
 
@@ -202,7 +203,7 @@ def create_recipe(
 
     model_slug = sanitize_model_name(model["name"])
     config["output_dir"] = (
-        f"results/mv_exp/sft/{model_slug}_{mixture['name']}_{gpu_type.value}"
+        f"results{'_debug' if DEBUG_MODE else ''}/mv_exp/sft/{model_slug}_{mixture['name']}_{gpu_type.value}"
     )
 
     return config
@@ -280,14 +281,14 @@ fi
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Generate HuggingFace TRL recipes and Slurm scripts for each model/data mixture combination."
+            "Generate HuggingFace TRL recipes and bash scripts for each model/data mixture combination."
         )
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path(__file__).resolve().parent,
-        help="Directory to place generated YAML and SLURM files.",
+        help="Directory to place generated YAML and bash files.",
     )
     return parser.parse_args()
 
