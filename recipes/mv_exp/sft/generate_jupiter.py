@@ -12,7 +12,7 @@ import yaml
 DEBUG_MODE = False
 
 # SLURM
-SLURM_ACCOUNT = "transfernetx"
+SLURM_ACCOUNT = "jureap59"
 SLURM_MAX_TIME = "00-01:00:00" if DEBUG_MODE else "00-12:00:00"
 
 # HuggingFace
@@ -22,34 +22,24 @@ HF_USERNAME = "ali-elganzory"
 # Distribution
 EFFECTIVE_BATCH_SIZE = 128
 NUM_GPUS = 4
-NUM_NODES = 4
+NUM_NODES = 2
 
 
 class ModelSize(Enum):
     S1_7B = "1.7b"
-    S1_7BL = "1.7bl"
 
 
 class GPUType(Enum):
-    A100 = "A100"
-    # H100 = "H100"
-    # H200 = "H200"
+    GH200 = "GH200"
 
     def max_batch_size(
         self,
         model_size: ModelSize,
     ) -> int:
         return {
-            self.A100: {
-                ModelSize.S1_7B: 4,
-                ModelSize.S1_7BL: 2,
+            self.GH200: {
+                ModelSize.S1_7B: 16,
             },
-            # self.H100: {
-            #     ModelSize.S1_7B: 16,
-            # },
-            # self.H200: {
-            #     ModelSize.S1_7B: 16,
-            # },
         }[self][model_size]
 
     @property
@@ -57,9 +47,7 @@ class GPUType(Enum):
         self,
     ) -> str:
         return {
-            self.A100: "develbooster" if DEBUG_MODE else "booster",
-            # self.H100: "accelerated-h100",
-            # self.H200: "accelerated-h200",
+            self.GH200: "booster",
         }[self]
 
     def accumulation_steps(
@@ -174,21 +162,32 @@ DATA_MIXTURES: List[Dict[str, Any]] = [
 
 MODELS: List[Dict[str, Any]] = [
     # {
-    #     "name": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated",
+    #     "name": "1.7b-MixtureVitae-300BT-v1-decontaminated-16k-SFT-Tulu3-decontaminated",
+    #     "path": "ontocord/1.7b-MixtureVitae-300BT-v1-decontaminated-16k",
     #     "size": ModelSize.S1_7B,
     # },
-    {
-        "name": "ontocord/1.7b-MixtureVitae-100BT",
-        "size": ModelSize.S1_7B,
-    },
-    {
-        "name": "ontocord/1.7b-MixtureVitae-curated_instruct-100BT",
-        "size": ModelSize.S1_7B,
-    },
-    {
-        "name": "ontocord/1.7b-MixtureVitae-web_curated-100BT",
-        "size": ModelSize.S1_7B,
-    },
+    # {
+    #     "name": "SmolLM2-1.7B-16k-SFT-Tulu3-decontaminated",
+    #     "path": "ontocord/SmolLM2-1.7B-16k",
+    #     "size": ModelSize.S1_7B,
+    # },
+    # {
+    #     "name": "1.7b-MixtureVitae-300BT-v1-decontaminated-SFT-Tulu3-decontaminated",
+    #     "path": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated",
+    #     "size": ModelSize.S1_7B,
+    # },
+    # {
+    #     "name": "ontocord/1.7b-MixtureVitae-100BT",
+    #     "size": ModelSize.S1_7B,
+    # },
+    # {
+    #     "name": "ontocord/1.7b-MixtureVitae-curated_instruct-100BT",
+    #     "size": ModelSize.S1_7B,
+    # },
+    # {
+    #     "name": "ontocord/1.7b-MixtureVitae-web_curated-100BT",
+    #     "size": ModelSize.S1_7B,
+    # },
     # {
     #     "name": "HuggingFaceTB/SmolLM2-1.7B",
     #     "size": ModelSize.S1_7B,
@@ -201,6 +200,16 @@ MODELS: List[Dict[str, Any]] = [
     #     "name": "Qwen/Qwen3-1.7B-Base",
     #     "size": ModelSize.S1_7BL,
     # },
+    {
+        "name": "ali-elganzory/1.7b-Comma0.1-300BT-SFT-Tulu3-decontaminated",
+        "path": "ontocord/1.7b-Comma0.1-300BT",
+        "size": ModelSize.S1_7B,
+    },
+    {
+        "name": "ali-elganzory/ablation-model-fineweb-edu-SFT-Tulu3-decontaminated",
+        "path": "HuggingFaceFW/ablation-model-fineweb-edu",
+        "size": ModelSize.S1_7B,
+    },
 ]
 
 ################################################################################
@@ -221,18 +230,16 @@ def create_recipe(
     config["dataset_mixture"]["datasets"] = mixture["datasets"]
     config["per_device_train_batch_size"] = gpu_type.max_batch_size(model["size"])
     config["gradient_accumulation_steps"] = gpu_type.accumulation_steps(model["size"])
-    config["model_name_or_path"] = model["name"]
+    config["model_name_or_path"] = model["path"]
 
     if UPLOAD_TO_HF:
-        config["hub_model_id"] = (
-            f"{HF_USERNAME}/{model['name'].split('/')[-1]}-SFT-Tulu3"
-        )
+        config["hub_model_id"] = f"{HF_USERNAME}/{model['name']}"
         config["hub_strategy"] = "every_save"
 
     if "max_length" in model:
         config["max_length"] = model["max_length"]
 
-    model_slug = sanitize_model_name(model["name"])
+    model_slug = sanitize_model_name(model["path"])
     config["output_dir"] = (
         f"results{'_debug' if DEBUG_MODE else ''}/mv_exp/sft/{model_slug}_{mixture['name']}_{gpu_type.value}"
     )
@@ -270,7 +277,7 @@ def write_slurm_script(
     script_name = f"{script_slug}.sh"
     script_path = target_dir / script_name
     grad_acc_steps = gpu_type.accumulation_steps(
-        next(model for model in MODELS if model["name"] == model_name)["size"]
+        next(model for model in MODELS if model["path"] == model_name)["size"]
     )
     partition = gpu_type.partition
 
@@ -304,7 +311,7 @@ export WANDB_MODE="offline"
 # -----------------------------------------------------------------------------
 # 1. Set master
 MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
-export MASTER_ADDR="${{MASTER_ADDR}}i"
+export MASTER_ADDR="${{MASTER_ADDR}}"
 export MASTER_IP=$(nslookup $MASTER_ADDR | awk '/^Address: / {{ print $2 }}' | tail -n 1)
 export MASTER_PORT=$((29500 + SLURM_JOB_ID % 2000))
 
@@ -313,11 +320,7 @@ if [ -z "$MASTER_ADDR" ]; then
     exit 1
 fi
 
-# 2. Strict Network Bindings (InfiniBand)
-export NCCL_SOCKET_IFNAME=ib0
-export GLOO_SOCKET_IFNAME=ib0
-
-# Optional: High-performance tuning for NCCL on multi-rail IB
+# 2. High-performance tuning for NCCL on multi-rail IB
 export NCCL_IB_HCA=mlx5
 export NCCL_IB_RETRY_CNT=7
 export NCCL_IB_TIMEOUT=120
@@ -325,12 +328,15 @@ export NCCL_DEBUG=INFO
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export OMP_NUM_THREADS=1
 
+
 # 3. Calculate World Size
 export NUM_NODES=$SLURM_NNODES
 export GPUS_PER_NODE={NUM_GPUS}
 export WORLD_SIZE=$(($NUM_NODES * $GPUS_PER_NODE))
 
 echo "Master Node: $MASTER_ADDR"
+echo "Master IP: $MASTER_IP"
+echo "Master Port: $MASTER_PORT"
 echo "Network Interface: $NCCL_SOCKET_IFNAME"
 
 # -----------------------------------------------------------------------------
@@ -357,7 +363,8 @@ trap 'handler' SIGUSR1
 # -----------------------------------------------------------------------------
 # EXECUTION
 # -----------------------------------------------------------------------------
-module load CUDA
+module load Stages/2025
+module load CUDA/12
 if [ -f .env ]; then export $(grep -v '^#' .env | xargs); fi
 source .venv/bin/activate
 
@@ -430,20 +437,20 @@ def main() -> None:
                 recipe = create_recipe(model, mixture, gpu_type)
                 recipe_path = write_recipe(
                     recipe,
-                    model["name"],
+                    model["path"],
                     mixture["name"],
                     gpu_type,
                     args.output_dir,
                 )
                 print(
                     f"✓ Recipe: {recipe_path.name}\n"
-                    f"   Model: {model['name']}\n"
+                    f"   Model: {model['path']}\n"
                     f"   Mixture: {mixture['name']}\n"
                     f"   GPU: {gpu_type.value}"
                 )
                 slurm_path = write_slurm_script(
                     recipe_path=recipe_path,
-                    model_name=model["name"],
+                    model_name=model["path"],
                     mixture_name=mixture["name"],
                     gpu_type=gpu_type,
                     target_dir=args.output_dir,
