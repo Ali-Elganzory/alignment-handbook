@@ -1,19 +1,33 @@
 from __future__ import annotations
 
 import argparse
+import re
+import subprocess
 from copy import deepcopy
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List
 
+from datasets import load_dataset
+from huggingface_hub import snapshot_download
+from jinja2 import Environment, FileSystemLoader
+from transformers import AutoModelForCausalLM
+from transformers import AutoTokenizer
 import yaml
 
 # Debug mode
 DEBUG_MODE = False
 
 # SLURM
-SLURM_ACCOUNT = "jureap59"
+SLURM_ACCOUNT = "reformo"
 SLURM_MAX_TIME = "00-01:00:00" if DEBUG_MODE else "00-12:00:00"
+SLURM_MAIL_USER = "alielganzory@hotmail.com"
+SLURM_CPUS_PER_TASK = 32
+
+# Repo layout (generate_jupiter.py lives in recipes/mv_exp/dpo/)
+_THIS_FILE = Path(__file__).resolve()
+_REPO_ROOT = _THIS_FILE.parents[3]
+_TEMPLATE_DIR = _THIS_FILE.parent / "templates"
 
 # HuggingFace
 UPLOAD_TO_HF = False
@@ -162,64 +176,139 @@ DATA_MIXTURES: List[Dict[str, Any]] = [
 ################################################################################
 
 MODELS: List[Dict[str, Any]] = [
+    # #### Main ####
+
     # {
-    #     "name": "ali-elganzory/SmolLM2-1.7B-SFT-Tulu3-decontaminated",
-    #     "hub_id": "SmolLM2-1.7B-DPO-Tulu3-decontaminated",
+    #     "new_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096-SFT-Tulu3-decontaminated",
     #     "size": ModelSize.S1_7B,
     # },
+    
     # {
-    #     "name": "ali-elganzory/Qwen2.5-1.5B-SFT-Tulu3-decontaminated",
-    #     "hub_id": "Qwen2.5-1.5B-DPO-Tulu3-decontaminated",
+    #     "new_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-16k-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-16k-SFT-Tulu3-decontaminated",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # {
+    #     "new_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096-SFT-Tulu3-decontaminated",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # {
+    #     "new_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096-longsft_16k-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096-longsft_16k-SFT-Tulu3-decontaminated",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # {
+    #     "new_id": "ali-elganzory/1.7b-Comma0.1-300BT-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/1.7b-Comma0.1-300BT-SFT-Tulu3-decontaminated",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # {
+    #     "new_id": "ali-elganzory/1.7b-Comma0.1-300BT-longsft_16k-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/1.7b-Comma0.1-300BT-longsft_16k-SFT-Tulu3-decontaminated",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # {
+    #     "new_id": "ali-elganzory/SmolLM2-1.7B-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/SmolLM2-1.7B-SFT-Tulu3-decontaminated",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # {
+    #     "new_id": "ali-elganzory/SmolLM2-1.7B-16k-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/SmolLM2-1.7B-16k-SFT-Tulu3-decontaminated",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # {
+    #     "new_id": "ali-elganzory/Qwen2.5-1.5B-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/Qwen2.5-1.5B-SFT-Tulu3-decontaminated",
     #     "size": ModelSize.S1_7BL,
     # },
+
     # {
-    #     "name": "ali-elganzory/Qwen3-1.7B-Base-SFT-Tulu3-decontaminated",
-    #     "hub_id": "Qwen3-1.7B-Base-DPO-Tulu3-decontaminated",
+    #     "new_id": "ali-elganzory/Qwen3-1.7B-Base-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/Qwen3-1.7B-Base-SFT-Tulu3-decontaminated",
     #     "size": ModelSize.S1_7BL,
     # },
-    # "ali-elganzory/1.7b-MixtureVitae-web_curated-100BT-SFT-Tulu3-decontaminated",
-    # "ali-elganzory/1.7b-MixtureVitae-curated_instruct-100BT-SFT-Tulu3-decontaminated",
-    # "ali-elganzory/1.7b-MixtureVitae-100BT-SFT-Tulu3-decontaminated",
+
     # {
-    #     "name": "ali-elganzory/1.7b-MixtureVitae-web_curated-100BT-SFT-Tulu3-decontaminated",
-    #     "path": "1.7b-MixtureVitae-web_curated-100BT-DPO-Tulu3-decontaminated",
+    #     "new_id": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-SFT-Tulu3-decontaminated",
     #     "size": ModelSize.S1_7B,
     # },
+
     # {
-    #     "name": "ali-elganzory/1.7b-MixtureVitae-curated_instruct-100BT-SFT-Tulu3-decontaminated",
-    #     "path": "1.7b-MixtureVitae-curated_instruct-100BT-DPO-Tulu3-decontaminated",
+    #     "new_id": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-16k-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-16k-SFT-Tulu3-decontaminated",
     #     "size": ModelSize.S1_7B,
     # },
+
+    # #### Ablation ####
+
     # {
-    #     "name": "ali-elganzory/1.7b-MixtureVitae-100BT-SFT-Tulu3-decontaminated",
-    #     "path": "1.7b-MixtureVitae-100BT-DPO-Tulu3-decontaminated",
+    #     "new_id": "ali-elganzory/1.7b-MixtureVitae-web_curated-100BT-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/1.7b-MixtureVitae-web_curated-100BT-SFT-Tulu3-decontaminated",
     #     "size": ModelSize.S1_7B,
     # },
+
     # {
-    #     "name": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-SFT-Tulu3-decontaminated",
-    #     "hub_id": "1.7b-MixtureVitae-300BT-v1-decontaminated-DPO-Tulu3-decontaminated",
+    #     "new_id": "ali-elganzory/1.7b-MixtureVitae-curated_instruct-100BT-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/1.7b-MixtureVitae-curated_instruct-100BT-SFT-Tulu3-decontaminated",
     #     "size": ModelSize.S1_7B,
     # },
+
     # {
-    #     "name": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-16k-SFT-Tulu3-decontaminated",
-    #     "hub_id": "1.7b-MixtureVitae-300BT-v1-decontaminated-16k-DPO-Tulu3-decontaminated",
+    #     "new_id": "ali-elganzory/1.7b-MixtureVitae-curated_instruct-100BT-longsft_16k-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/1.7b-MixtureVitae-curated_instruct-100BT-longsft_16k-SFT-Tulu3-decontaminated",
     #     "size": ModelSize.S1_7B,
     # },
+
     # {
-    #     "name": "ali-elganzory/SmolLM2-1.7B-16k-SFT-Tulu3-decontaminated",
-    #     "hub_id": "SmolLM2-1.7B-16k-DPO-Tulu3-decontaminated",
+    #     "new_id": "ali-elganzory/1.7b-MixtureVitae-100BT-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/1.7b-MixtureVitae-100BT-SFT-Tulu3-decontaminated",
     #     "size": ModelSize.S1_7B,
     # },
-    {
-        "name": "ali-elganzory/1.7b-Comma0.1-300BT-SFT-Tulu3-decontaminated",
-        "hub_id": "1.7b-Comma0.1-300BT-DPO-Tulu3-decontaminated",
-        "size": ModelSize.S1_7B,
-    },
-    {
-        "name": "ali-elganzory/ablation-model-fineweb-edu-SFT-Tulu3-decontaminated",
-        "hub_id": "ablation-model-fineweb-edu-DPO-Tulu3-decontaminated",
-        "size": ModelSize.S1_7B,
-    },
+
+    # {
+    #     "new_id": "ali-elganzory/1.7b-MixtureVitae-100BT-longsft_16k-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/1.7b-MixtureVitae-100BT-longsft_16k-SFT-Tulu3-decontaminated",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # #### Not Decontaminated ####
+
+    # {
+    #     "new_id": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-DPO-Tulu3",
+    #     "old_id": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-SFT-Tulu3",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # {
+    #     "new_id": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-16k-DPO-Tulu3",
+    #     "old_id": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-16k-SFT-Tulu3",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # #### 0.4B ####
+
+    # {
+    #     "new_id": "ali-elganzory/Baguettotron-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/Baguettotron-SFT-Tulu3-decontaminated",
+    #     "size": ModelSize.S0_4B,
+    # },
+
+    # {
+    #     "new_id": "ali-elganzory/0.4b-mixturevitae-v1-decontaminated-300B-4096-DPO-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/0.4b-mixturevitae-v1-decontaminated-300B-4096-SFT-Tulu3-decontaminated",
+    #     "size": ModelSize.S0_4B,
+    # }
 ]
 
 ################################################################################
@@ -231,6 +320,28 @@ def sanitize_model_name(model_name: str) -> str:
     return model_name.replace("/", "-")
 
 
+def generate_new_id(old_id: str, suffix: str) -> str:
+    """Generate new_id from old_id by replacing owner with ali-elganzory and appending suffix."""
+    if "/" in old_id:
+        owner, model_part = old_id.split("/", 1)
+        return f"ali-elganzory/{model_part}{suffix}"
+    else:
+        return f"ali-elganzory/{old_id}{suffix}"
+
+
+def parse_model_size(size_str: str) -> ModelSize:
+    """Convert model size string to ModelSize enum."""
+    size_map = {
+        "1.7b": ModelSize.S1_7B,
+        "1.7bl": ModelSize.S1_7BL,
+    }
+    if size_str not in size_map:
+        raise ValueError(
+            f"Invalid model size: {size_str}. Valid options: {list(size_map.keys())}"
+        )
+    return size_map[size_str]
+
+
 def create_recipe(
     model: Dict[str, Any],
     mixture: Dict[str, Any],
@@ -240,200 +351,217 @@ def create_recipe(
     config["dataset_mixture"]["datasets"] = mixture["datasets"]
     config["per_device_train_batch_size"] = gpu_type.max_batch_size(model["size"])
     config["gradient_accumulation_steps"] = gpu_type.accumulation_steps(model["size"])
-    config["model_name_or_path"] = model["name"]
+    config["model_name_or_path"] = model["old_id"]
 
-    if UPLOAD_TO_HF:
-        config["hub_model_id"] = f"{HF_USERNAME}/{model['hub_id']}"
-        config["hub_strategy"] = "every_save"
+    config["hub_model_id"] = model['new_id']
+    config["hub_strategy"] = "every_save"
 
     if "max_length" in model:
         config["max_length"] = model["max_length"]
 
-    model_slug = sanitize_model_name(model["name"])
+    model_slug = sanitize_model_name(model["old_id"])
     config["output_dir"] = (
-        f"results{'_debug' if DEBUG_MODE else ''}/mv_exp/dpo/{model_slug}_{mixture['name']}_{gpu_type.value}"
+        f"/e/project1/reformo/ali/alignment-handbook/results{'_debug' if DEBUG_MODE else ''}/mv_exp/dpo/{model_slug}_{mixture['name']}_{gpu_type.value}"
     )
 
     return config
 
 
-def write_recipe(
-    recipe: dict,
-    model_name: str,
-    mixture_name: str,
-    gpu_type: GPUType,
-    target_dir: Path,
-) -> Path:
-    target_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{sanitize_model_name(model_name)}_{mixture_name}_{gpu_type.value}.yaml"
-    output_path = target_dir / filename
+def write_recipe(recipe: dict, run_dir: Path) -> Path:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    output_path = (run_dir / "config.yaml").resolve()
     with output_path.open("w", encoding="utf-8") as handle:
         yaml.safe_dump(recipe, handle, sort_keys=False)
     return output_path
 
 
+_jinja_env: Environment | None = None
+
+
+def _get_jinja_env() -> Environment:
+    global _jinja_env
+    if _jinja_env is None:
+        _jinja_env = Environment(
+            loader=FileSystemLoader(_TEMPLATE_DIR),
+            autoescape=False,
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )
+    return _jinja_env
+
+
 def write_slurm_script(
+    *,
     recipe_path: Path,
     model_name: str,
     mixture_name: str,
     gpu_type: GPUType,
-    target_dir: Path,
+    run_dir: Path,
+    model_size: ModelSize,
 ) -> Path:
-    """Generate a SLURM script for running this SFT recipe."""
+    """Render the SLURM batch script under run_dir/slurm/."""
     model_slug = sanitize_model_name(model_name)
     mixture_slug = sanitize_model_name(mixture_name)
     gpu_slug = gpu_type.value
     script_slug = f"{model_slug}_{mixture_slug}_{gpu_slug}"
-    script_name = f"{script_slug}.sh"
-    script_path = target_dir / script_name
-    grad_acc_steps = gpu_type.accumulation_steps(
-        next(model for model in MODELS if model["name"] == model_name)["size"]
-    )
+    slurm_dir = run_dir / "slurm"
+    slurm_dir.mkdir(parents=True, exist_ok=True)
+    script_path = slurm_dir / f"{script_slug}.sh"
+
+    run_dir_resolved = run_dir.resolve()
+    run_posix = run_dir_resolved.as_posix()
+    grad_acc_steps = gpu_type.accumulation_steps(model_size)
     partition = gpu_type.partition
+    recipe_abs = recipe_path.resolve().as_posix()
+    repo_root_abs = _REPO_ROOT.as_posix()
 
-    slurm_content = f"""#!/bin/bash
-#SBATCH --job-name={script_slug}_dpo
-#SBATCH --output=slurm_logs/mv_exp/dpo/{script_slug}/%j.%x.%N.out
-#SBATCH --error=slurm_logs/mv_exp/dpo/{script_slug}/%j.%x.%N.err
-#SBATCH --time={SLURM_MAX_TIME}
-#SBATCH --partition={partition}
-#SBATCH --account={SLURM_ACCOUNT}
-#SBATCH --nodes={NUM_NODES}
-#SBATCH --ntasks-per-node=1
-#SBATCH --gres=gpu:{NUM_GPUS}
-#SBATCH --cpus-per-task=32
-#SBATCH --mail-type=ALL
-#SBATCH --mail-user=alielganzory@hotmail.com
-#SBATCH --open-mode=append
-#SBATCH --signal=B:SIGUSR1@90
+    template = _get_jinja_env().get_template("jupiter_dpo.slurm.j2")
+    content = template.render(
+        script_slug=script_slug,
+        slurm_out_pattern=f"{run_posix}/slurm/%j.%x.%N.out",
+        slurm_err_pattern=f"{run_posix}/slurm/%j.%x.%N.err",
+        slurm_max_time=SLURM_MAX_TIME,
+        partition=partition,
+        slurm_account=SLURM_ACCOUNT,
+        num_nodes=NUM_NODES,
+        num_gpus=NUM_GPUS,
+        cpus_per_task=SLURM_CPUS_PER_TASK,
+        mail_user=SLURM_MAIL_USER,
+        repo_root_abs=repo_root_abs,
+        run_dir_posix=run_posix,
+        grad_acc_steps=grad_acc_steps,
+        recipe_path_abs=recipe_abs,
+        debug_mode=DEBUG_MODE,
+    )
 
-# Force Transformers and Hub into offline mode
-export TRANSFORMERS_OFFLINE=1
-export HF_HUB_OFFLINE=1
-
-# If you are using Hugging Face Datasets as well
-export HF_DATASETS_OFFLINE=1
-
-export WANDB_MODE="offline"
-
-# -----------------------------------------------------------------------------
-# DISTRIBUTED CONFIGURATION
-# -----------------------------------------------------------------------------
-# 1. Set master
-MASTER_ADDR=$(scontrol show hostnames $SLURM_JOB_NODELIST | head -n 1)
-export MASTER_ADDR="${{MASTER_ADDR}}"
-export MASTER_IP=$(nslookup $MASTER_ADDR | awk '/^Address: / {{ print $2 }}' | tail -n 1)
-export MASTER_PORT=$((29500 + SLURM_JOB_ID % 2000))
-
-if [ -z "$MASTER_ADDR" ]; then
-    echo "ERROR: Could not find MASTER_ADDR. hostname -I returned empty."
-    exit 1
-fi
-
-# 2. High-performance tuning for NCCL on multi-rail IB
-export NCCL_IB_HCA=mlx5
-export NCCL_IB_RETRY_CNT=7
-export NCCL_IB_TIMEOUT=120
-export NCCL_DEBUG=INFO
-export CUDA_DEVICE_MAX_CONNECTIONS=1
-export OMP_NUM_THREADS=1
-
-
-# 3. Calculate World Size
-export NUM_NODES=$SLURM_NNODES
-export GPUS_PER_NODE={NUM_GPUS}
-export WORLD_SIZE=$(($NUM_NODES * $GPUS_PER_NODE))
-
-echo "Master Node: $MASTER_ADDR"
-echo "Master IP: $MASTER_IP"
-echo "Master Port: $MASTER_PORT"
-echo "Network Interface: $NCCL_SOCKET_IFNAME"
-
-# -----------------------------------------------------------------------------
-# SELF-HEALING & RETRY LOGIC
-# -----------------------------------------------------------------------------
-RETRY_FILE="retry_count_${{SLURM_JOB_NAME}}.txt"
-MAX_RETRIES=10
-if [ ! -f "$RETRY_FILE" ]; then echo "0" > "$RETRY_FILE"; fi
-CURRENT_RETRIES=$(cat "$RETRY_FILE")
-
-handler() {{
-    echo "Function 'handler' triggered."
-    if [ "$CURRENT_RETRIES" -ge "$MAX_RETRIES" ]; then
-        echo "Max retries reached. Stopping."
-        rm "$RETRY_FILE"
-        exit 1
-    fi
-    echo $((CURRENT_RETRIES + 1)) > "$RETRY_FILE"
-    sbatch $0
-    exit 0
-}}
-trap 'handler' SIGUSR1
-
-# -----------------------------------------------------------------------------
-# EXECUTION
-# -----------------------------------------------------------------------------
-module load Stages/2025
-module load CUDA/12
-if [ -f .env ]; then export $(grep -v '^#' .env | xargs); fi
-source .venv/bin/activate
-
-# DEFINE THE LAUNCHER
-# We wrap 'accelerate launch' inside 'srun'.
-# srun ensures this runs exactly once per node.
-# accelerate then manages the local GPUs on that node.
-
-export LAUNCHER="accelerate launch \\
-    --config_file recipes/accelerate_configs/zero3.yaml \\
-    --gradient_accumulation_steps {grad_acc_steps} \\
-    --num_machines $NUM_NODES \\
-    --num_processes $WORLD_SIZE \\
-    --main_process_ip $MASTER_IP \\
-    --main_process_port $MASTER_PORT \\
-    --machine_rank \$SLURM_PROCID \\
-    --same_network \\
-    --max_restarts 0 \\
-    --role \$(hostname -s): "
-
-export CMD="scripts/dpo.py --config {recipe_path}"
-
-# RUN IT
-# --ntasks=$NUM_NODES means "Run 1 copy of this command per node"
-# --kill-on-bad-exit=1 means "If one node crashes, kill them all"
-srun --ntasks=$NUM_NODES --export=ALL --wait=60 --kill-on-bad-exit=1 bash -c "$LAUNCHER $CMD" &
-
-CHILD_PID=$!
-wait $CHILD_PID
-EXIT_CODE=$?
-
-if [ $EXIT_CODE -eq 0 ]; then
-    echo "Job finished successfully!"
-    rm "$RETRY_FILE"
-    exit 0
-else
-    echo "Job Failed with Exit Code $EXIT_CODE"
-    {"# handler" if DEBUG_MODE else "handler"}
-fi
-"""
-
-    script_path.parent.mkdir(parents=True, exist_ok=True)
-    with script_path.open("w", encoding="utf-8") as fh:
-        fh.write(slurm_content)
+    script_path.write_text(content, encoding="utf-8")
     script_path.chmod(0o770)
-    return script_path
+    return script_path.resolve()
+
+
+def prefetch_caches(models: List[Dict[str, Any]], *, verbose: bool, skip: bool) -> None:
+    if skip:
+        return
+    if verbose:
+        print("Prefetching dataset caches...")
+    else:
+        print("Prefetching Hugging Face caches (datasets + selected models)...")
+    for mixture in DATA_MIXTURES:
+        for dataset in mixture["datasets"]:
+            if verbose:
+                print(f"  dataset: {dataset['id']}")
+            load_dataset(dataset["id"])
+    for model in models:
+        if verbose:
+            print(f"  model: {model['old_id']}")
+        snapshot_download(model["old_id"], repo_type="model")
+        AutoTokenizer.from_pretrained(model["old_id"], trust_remote_code=True)
+        AutoModelForCausalLM.from_pretrained(model["old_id"], trust_remote_code=True)
+    print("Prefetch complete.")
+
+
+def prompt_model_selection(models: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if len(models) <= 1:
+        return models
+    print(f"\n{len(models)} models are defined. Choose scope:")
+    print("  [a] All models  —  generate/submit jobs for every model")
+    print("  [p] Pick one    —  choose a single model by index\n")
+    for i, m in enumerate(models, start=1):
+        print(f"  {i}. {m['old_id']}")
+    while True:
+        choice = input("\nEnter a or p: ").strip().lower()
+        if choice == "a":
+            return models
+        if choice == "p":
+            while True:
+                raw = input(f"Model index [1-{len(models)}]: ").strip()
+                try:
+                    idx = int(raw)
+                    if 1 <= idx <= len(models):
+                        return [models[idx - 1]]
+                except ValueError:
+                    pass
+                print("Invalid index; try again.")
+        else:
+            print("Please enter 'a' or 'p'.")
+
+
+def print_run_confirmation(
+    *,
+    run_dir: Path,
+    config_path: Path,
+    slurm_path: Path,
+    recipe: dict,
+) -> None:
+    print("\n--- Run artifacts ---")
+    print(f"Run directory:   {run_dir}")
+    print(f"Config:          {config_path}")
+    print(f"Slurm script:    {slurm_path}")
+    print(f"Slurm logs:      {run_dir / 'slurm' / '%j.%x.%N.out'} (.err alongside)\n")
+    print("--- config.yaml ---")
+    print(yaml.safe_dump(recipe, sort_keys=False), end="")
+    print("--- end config ---\n")
+
+
+def prompt_submit_run() -> bool:
+    answer = input("Submit this job with sbatch? [y/N]: ").strip().lower()
+    return answer in ("y", "yes")
+
+
+def submit_slurm(script_path: Path) -> str:
+    result = subprocess.run(
+        ["sbatch", str(script_path)],
+        cwd=_REPO_ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    combined = (result.stdout or "") + (result.stderr or "")
+    match = re.search(r"Submitted batch job (\d+)", combined)
+    if not match:
+        raise RuntimeError(f"Unexpected sbatch output: {combined!r}")
+    return match.group(1)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Generate HuggingFace TRL recipes and Slurm scripts for each model/data mixture combination."
+            "Generate DPO config.yaml and Slurm scripts under each run output_dir, "
+            "then optionally submit with sbatch."
         )
     )
     parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=Path(__file__).resolve().parent,
-        help="Directory to place generated YAML and SLURM files.",
+        "--old-id",
+        type=str,
+        default=None,
+        help="Model path (old_id) that takes precedence over MODELS list. If provided, generates a single model entry.",
+    )
+    parser.add_argument(
+        "--model-size",
+        type=str,
+        default="1.7b",
+        help="Model size enum value (default: '1.7b'). Valid options: '1.7b', '1.7bl'.",
+    )
+    parser.add_argument(
+        "--no-submit",
+        action="store_true",
+        help="Write config and Slurm script only; do not call sbatch.",
+    )
+    parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Do not prompt before sbatch; submit (or skip if --no-submit).",
+    )
+    parser.add_argument(
+        "--skip-prefetch",
+        action="store_true",
+        help="Skip Hugging Face dataset/model cache prefetch.",
+    )
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Verbose prefetch logging.",
     )
     return parser.parse_args()
 
@@ -441,31 +569,61 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    for model in MODELS:
+    if args.old_id:
+        model_size = parse_model_size(args.model_size)
+        new_id = generate_new_id(args.old_id, "-DPO-Tulu3-decontaminated")
+        models_to_process = [
+            {
+                "old_id": args.old_id,
+                "new_id": new_id,
+                "size": model_size,
+            }
+        ]
+    else:
+        models_to_process = MODELS
+
+    models_to_process = prompt_model_selection(models_to_process)
+    prefetch_caches(
+        models_to_process,
+        verbose=args.verbose,
+        skip=args.skip_prefetch,
+    )
+
+    for model in models_to_process:
         for mixture in DATA_MIXTURES:
             for gpu_type in GPUType:
                 recipe = create_recipe(model, mixture, gpu_type)
-                recipe_path = write_recipe(
-                    recipe,
-                    model["name"],
-                    mixture["name"],
-                    gpu_type,
-                    args.output_dir,
-                )
-                print(
-                    f"✓ Recipe: {recipe_path.name}\n"
-                    f"   Model: {model['name']}\n"
-                    f"   Mixture: {mixture['name']}\n"
-                    f"   GPU: {gpu_type.value}"
-                )
+                run_dir = Path(recipe["output_dir"]).resolve()
+                run_dir.mkdir(parents=True, exist_ok=True)
+                (run_dir / "slurm").mkdir(parents=True, exist_ok=True)
+
+                config_path = write_recipe(recipe, run_dir)
                 slurm_path = write_slurm_script(
-                    recipe_path=recipe_path,
-                    model_name=model["name"],
+                    recipe_path=config_path,
+                    model_name=model["old_id"],
                     mixture_name=mixture["name"],
                     gpu_type=gpu_type,
-                    target_dir=args.output_dir,
+                    run_dir=run_dir,
+                    model_size=model["size"],
                 )
-                print(f"  SLURM script written to: {slurm_path.name}")
+
+                print_run_confirmation(
+                    run_dir=run_dir,
+                    config_path=config_path,
+                    slurm_path=slurm_path,
+                    recipe=recipe,
+                )
+
+                if args.no_submit:
+                    print("(--no-submit) Skipped sbatch.\n")
+                    continue
+
+                if not args.yes and not prompt_submit_run():
+                    print("Skipped sbatch for this run.\n")
+                    continue
+
+                job_id = submit_slurm(slurm_path)
+                print(f"Submitted batch job {job_id}\n")
 
 
 if __name__ == "__main__":

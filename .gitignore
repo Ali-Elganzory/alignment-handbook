@@ -166,3 +166,4 @@ wandb/
 # Outputs
 slurm_logs/
 results/
+results_debug/
