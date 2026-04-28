@@ -14,38 +14,62 @@ from transformers import AutoTokenizer
 from transformers import AutoModelForCausalLM
 from jinja2 import Environment, FileSystemLoader
 import yaml
+from dotenv import dotenv_values
+
+SUPPORTED_CLUSTERS = ("jupiter", "leonardo")
+
+
+def _early_resolve_cluster() -> str:
+    """Pick the cluster env file before the main argparse runs.
+
+    Module-level constants (SLURM_*, MODULES, ...) are derived from `env_vars`,
+    which must be loaded at import time. We pre-parse only `--cluster` here and
+    let the main `parse_args()` re-parse it (with help/choices) for the user.
+    """
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--cluster", default="jupiter", choices=SUPPORTED_CLUSTERS)
+    parsed, _ = pre.parse_known_args()
+    return parsed.cluster
+
+
+CLUSTER = _early_resolve_cluster()
+current_dir = Path(__file__).resolve().parent
+env_vars = dotenv_values(current_dir.parent / f"{CLUSTER}.env")
 
 # Debug mode
-DEBUG_MODE = False
+DEBUG_MODE = bool(env_vars["DEBUG_MODE"])
 
 # SLURM
-SLURM_ACCOUNT = "reformo"
-SLURM_MAX_TIME = "00-01:00:00" if DEBUG_MODE else "00-12:00:00"
-SLURM_MAIL_USER = "alielganzory@hotmail.com"
-SLURM_CPUS_PER_GPU = 18
+SLURM_ACCOUNT = env_vars["SLURM_ACCOUNT"]
+SLURM_PARTITION = env_vars["SLURM_PARTITION"]
+SLURM_MAX_TIME = "00-01:00:00" if DEBUG_MODE else env_vars["SLURM_MAX_TIME"]
+SLURM_MAIL_USER = env_vars["SLURM_MAIL_USER"]
+SLURM_CPUS_PER_GPU = int(env_vars["SLURM_CPUS_PER_GPU"])
+TARGET_GPU = env_vars["TARGET_GPU"]
+MODULES = tuple(m for m in env_vars.get("MODULES", "").split() if m)
 
 # HuggingFace
-UPLOAD_TO_HF = False
-HF_USERNAME = "ali-elganzory"
+UPLOAD_TO_HF = env_vars["UPLOAD_TO_HF"]
+HF_USERNAME = env_vars["HF_USERNAME"]
 
 # Distribution
-EFFECTIVE_BATCH_SIZE = 128
-NUM_GPUS = 4
-NUM_NODES = 2
+EFFECTIVE_BATCH_SIZE = int(env_vars["SFT_EFFECTIVE_BATCH_SIZE"])
+NUM_GPUS = int(env_vars["SFT_NUM_GPUS"])
+NUM_NODES = int(env_vars["SFT_NUM_NODES"])
 
 # Repo layout (generate_jupiter.py lives in recipes/mv_exp/sft/)
 _THIS_FILE = Path(__file__).resolve()
 _REPO_ROOT = _THIS_FILE.parents[3]
-_TEMPLATE_DIR = _THIS_FILE.parent / "templates"
+_TEMPLATE_DIR = _THIS_FILE.parent.parent / "templates"
 
 
 class ModelSize(Enum):
     S1_7B = "1.7b"
     S0_4B = "0.4b"
 
-
 class GPUType(Enum):
     GH200 = "GH200"
+    A100 = "A100"
 
     def max_batch_size(
         self,
@@ -56,15 +80,11 @@ class GPUType(Enum):
                 ModelSize.S1_7B: 16,
                 ModelSize.S0_4B: 16,
             },
+            self.A100: {
+                ModelSize.S1_7B: 16,
+                ModelSize.S0_4B: 16,
+            },
         }[self][model_size]
-
-    @property
-    def partition(
-        self,
-    ) -> str:
-        return {
-            self.GH200: "booster",
-        }[self]
 
     def accumulation_steps(
         self,
@@ -80,24 +100,7 @@ class GPUType(Enum):
 
 
 # Tulu 3 chat template
-CHAT_TEMPLATE = """
-{%- for message in messages -%}
-	{%- if message["role"] == "system" -%}
-		{{- "<|system|>\n" + message["content"] + "\n" -}}
-	{%- elif message["role"] == "user" -%}
-		{{- "<|user|>\n" + message["content"] + "\n" -}}
-	{%- elif message["role"] == "assistant" -%}
-		{%- if not loop.last -%}
-			{{- "<|assistant|>\n" + message["content"] + eos_token + "\n" -}}
-		{%- else -%}
-			{{- "<|assistant|>\n" + message["content"] + eos_token -}}
-		{%- endif -%}
-	{%- endif -%}
-	{%- if loop.last and add_generation_prompt -%}
-		{{- "<|assistant|>\n" -}}
-	{%- endif -%}
-{%- endfor -%}
-"""
+CHAT_TEMPLATE = open(_TEMPLATE_DIR / "chat.j2", "r").read()
 
 ADDITIONAL_SPECIAL_TOKENS = [
     "<|system|>",
@@ -156,19 +159,17 @@ def make_base_config() -> dict:
 # Data mixtures
 ################################################################################
 
-DATA_MIXTURES: List[Dict[str, Any]] = [
-    {
-        "name": "tulu-3-sft-mixture-decontaminated",
-        "datasets": [
-            {
-                "id": "ali-elganzory/tulu-3-sft-mixture-decontaminated",
-                "config": "default",
-                "split": "train",
-                "columns": ["messages"],
-            },
-        ],
-    },
-]
+DATA_MIXTURE: Dict[str, Any] = {
+    "name": "tulu-3-sft-mixture-decontaminated",
+    "datasets": [
+        {
+            "id": "ali-elganzory/tulu-3-sft-mixture-decontaminated",
+            "config": "default",
+            "split": "train",
+            "columns": ["messages"],
+        },
+    ],
+}
 
 ################################################################################
 # Models
@@ -403,7 +404,7 @@ def create_recipe(
 
     model_slug = sanitize_model_name(model["old_id"])
     config["output_dir"] = (
-        f"/e/project1/reformo/ali/alignment-handbook/results{'_debug' if DEBUG_MODE else ''}/mv_exp/sft/{model_slug}_{mixture['name']}_{gpu_type.value}"
+        f"results{'_debug' if DEBUG_MODE else ''}/sft/{model_slug}_{mixture['name']}_{gpu_type.value}"
     )
 
     return config
@@ -453,7 +454,7 @@ def write_slurm_script(
     run_dir_resolved = run_dir.resolve()
     run_posix = run_dir_resolved.as_posix()
     grad_acc_steps = gpu_type.accumulation_steps(model_size)
-    partition = gpu_type.partition
+    partition = SLURM_PARTITION
     recipe_abs = recipe_path.resolve().as_posix()
     repo_root_abs = _REPO_ROOT.as_posix()
 
@@ -474,6 +475,9 @@ def write_slurm_script(
         grad_acc_steps=grad_acc_steps,
         recipe_path_abs=recipe_abs,
         debug_mode=DEBUG_MODE,
+        task_name="sft",
+        task_script_name="sft",
+        modules=list(MODULES),
     )
 
     script_path.write_text(content, encoding="utf-8")
@@ -488,11 +492,10 @@ def prefetch_caches(models: List[Dict[str, Any]], *, verbose: bool, skip: bool) 
         print("Prefetching dataset caches...")
     else:
         print("Prefetching Hugging Face caches (datasets + selected models)...")
-    for mixture in DATA_MIXTURES:
-        for dataset in mixture["datasets"]:
-            if verbose:
-                print(f"  dataset: {dataset['id']}")
-            load_dataset(dataset["id"])
+    for dataset in DATA_MIXTURE["datasets"]:
+        if verbose:
+            print(f"  dataset: {dataset['id']}")
+        load_dataset(dataset["id"])
     for model in models:
         if verbose:
             print(f"  model: {model['old_id']}")
@@ -573,6 +576,12 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument(
+        "--cluster",
+        choices=SUPPORTED_CLUSTERS,
+        default="jupiter",
+        help="Cluster name; selects which <cluster>.env file to load (default: jupiter).",
+    )
+    parser.add_argument(
         "--old-id",
         type=str,
         default=None,
@@ -632,40 +641,39 @@ def main() -> None:
     )
 
     for model in models_to_process:
-        for mixture in DATA_MIXTURES:
-            for gpu_type in GPUType:
-                recipe = create_recipe(model, mixture, gpu_type)
-                run_dir = Path(recipe["output_dir"]).resolve()
-                run_dir.mkdir(parents=True, exist_ok=True)
-                (run_dir / "slurm").mkdir(parents=True, exist_ok=True)
+        for gpu_type in GPUType:
+            recipe = create_recipe(model, DATA_MIXTURE, gpu_type)
+            run_dir = Path(recipe["output_dir"]).resolve()
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "slurm").mkdir(parents=True, exist_ok=True)
 
-                config_path = write_recipe(recipe, run_dir)
-                slurm_path = write_slurm_script(
-                    recipe_path=config_path,
-                    model_name=model["old_id"],
-                    mixture_name=mixture["name"],
-                    gpu_type=gpu_type,
-                    run_dir=run_dir,
-                    model_size=model["size"],
-                )
+            config_path = write_recipe(recipe, run_dir)
+            slurm_path = write_slurm_script(
+                recipe_path=config_path,
+                model_name=model["old_id"],
+                mixture_name=DATA_MIXTURE["name"],
+                gpu_type=gpu_type,
+                run_dir=run_dir,
+                model_size=model["size"],
+            )
 
-                print_run_confirmation(
-                    run_dir=run_dir,
-                    config_path=config_path,
-                    slurm_path=slurm_path,
-                    recipe=recipe,
-                )
+            print_run_confirmation(
+                run_dir=run_dir,
+                config_path=config_path,
+                slurm_path=slurm_path,
+                recipe=recipe,
+            )
 
-                if args.no_submit:
-                    print("(--no-submit) Skipped sbatch.\n")
-                    continue
+            if args.no_submit:
+                print("(--no-submit) Skipped sbatch.\n")
+                continue
 
-                if not args.yes and not prompt_submit_run():
-                    print("Skipped sbatch for this run.\n")
-                    continue
+            if not args.yes and not prompt_submit_run():
+                print("Skipped sbatch for this run.\n")
+                continue
 
-                job_id = submit_slurm(slurm_path)
-                print(f"Submitted batch job {job_id}\n")
+            job_id = submit_slurm(slurm_path)
+            print(f"Submitted batch job {job_id}\n")
 
 
 if __name__ == "__main__":

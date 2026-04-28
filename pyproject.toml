@@ -1,0 +1,86 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alignment-handbook"
+version = "0.4.0.dev0"
+description = "The Alignment Handbook"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = "==3.11.15"
+keywords = ["nlp", "deep learning", "rlhf", "llm"]
+authors = [
+    { name = "The Hugging Face team (past and future)", email = "lewis@huggingface.co" },
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "accelerate==1.13.0",
+    "bitsandbytes==0.49.2",
+    "einops==0.8.2",
+    "evaluate==0.4.0",
+    "datasets==4.8.4",
+    "deepspeed==0.18.4",
+    "huggingface-hub==0.36.2",
+    "jinja2==3.1.6",
+    "liger-kernel==0.7.0",
+    "ninja==1.13.0",
+    "numpy==2.4.4",
+    "packaging==26.0",
+    "peft==0.18.1",
+    "protobuf==3.20.2",
+    "safetensors==0.7.0",
+    "sentencepiece==0.2.1",
+    "scipy>=1.17.1",
+    "tensorboard==2.20.0",
+    "tqdm==4.67.3",
+    "transformers==4.57.6",
+    "trl==0.27.1",
+    "wandb==0.25.0",
+    "dotenv",
+    "pandas==3.0.2",
+    "nvidia-cudnn-cu12",
+    "nvidia-cusparselt-cu12",
+]
+
+[project.optional-dependencies]
+torch = [
+    "torch==2.6.0",
+    "triton==3.2.0",
+    "flash-attn==2.7.4",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu126" }
+]
+triton = [
+    { index = "pytorch-cu126" }
+]
+flash-attn = [
+    { url = "https://github.com/mjun0812/flash-attention-prebuild-wheels/releases/download/v0.9.4/flash_attn-2.7.4+cu126torch2.11-cp311-cp311-linux_x86_64.whl" }
+]
+
+[project.urls]
+Homepage = "https://github.com/huggingface/alignment-handbook"
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.packages.find]
+where = ["src"]

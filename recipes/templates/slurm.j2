@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name={{ script_slug }}_sft
+#SBATCH --job-name={{ script_slug }}_{{ task_name }}
 #SBATCH --output={{ slurm_out_pattern }}
 #SBATCH --error={{ slurm_err_pattern }}
 #SBATCH --time={{ slurm_max_time }}
@@ -17,14 +17,6 @@
 cd {{ repo_root_abs }} || { echo "cd failed"; exit 1; }
 
 {% raw %}
-# Force Transformers and Hub into offline mode
-export TRANSFORMERS_OFFLINE=1
-export HF_HUB_OFFLINE=1
-
-# If you are using Hugging Face Datasets as well
-export HF_DATASETS_OFFLINE=1
-
-export WANDB_MODE="offline"
 
 # -----------------------------------------------------------------------------
 # DISTRIBUTED CONFIGURATION
@@ -85,12 +77,28 @@ handler() {
 trap 'handler' SIGUSR1
 
 # -----------------------------------------------------------------------------
+# ENVIRONMENT
+# -----------------------------------------------------------------------------
+
+if [ -f .env ]; then export $(grep -v '^#' .env | xargs); fi
+
+export TRANSFORMERS_OFFLINE=1
+export HF_HUB_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+export WANDB_MODE="offline"
+
+{% endraw %}
+{% for mod in modules -%}
+module load {{ mod }}
+{% endfor -%}
+{% raw %}
+
+source .venv/bin/activate
+
+# -----------------------------------------------------------------------------
 # EXECUTION
 # -----------------------------------------------------------------------------
-module load Stages/2025
-module load CUDA/12
-if [ -f .env ]; then export $(grep -v '^#' .env | xargs); fi
-source .venv/bin/activate
+
 
 # DEFINE THE LAUNCHER
 # We wrap 'accelerate launch' inside 'srun'.
@@ -110,7 +118,7 @@ export LAUNCHER="accelerate launch \
     --role \$(hostname -s): "
 
 {% endraw %}
-export CMD="scripts/sft.py --config {{ recipe_path_abs }}"
+export CMD="scripts/{% endraw %}{{ script_name }}{% endraw %}.py --config {{ recipe_path_abs }}"
 {% raw %}
 
 # RUN IT
