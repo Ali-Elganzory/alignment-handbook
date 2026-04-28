@@ -22,7 +22,7 @@ DEBUG_MODE = False
 SLURM_ACCOUNT = "reformo"
 SLURM_MAX_TIME = "00-01:00:00" if DEBUG_MODE else "00-12:00:00"
 SLURM_MAIL_USER = "alielganzory@hotmail.com"
-SLURM_CPUS_PER_TASK = 32
+SLURM_CPUS_PER_GPU = 18
 
 # HuggingFace
 UPLOAD_TO_HF = False
@@ -176,11 +176,18 @@ DATA_MIXTURES: List[Dict[str, Any]] = [
 MODELS: List[Dict[str, Any]] = [
     # #### Main ####
 
+
     # {
     #     "new_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096-SFT-Tulu3-decontaminated",
     #     "old_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096",
     #     "size": ModelSize.S1_7B,
     # },
+
+    {
+        "new_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096-long_sft_16k-SFT-Tulu3-decontaminated",
+        "old_id": "open-sci/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-4096-long_sft_16k",
+        "size": ModelSize.S1_7B,
+    },
     
     # {
     #     "new_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-nemotron-hq-300B-16k-SFT-Tulu3-decontaminated",
@@ -197,6 +204,18 @@ MODELS: List[Dict[str, Any]] = [
     # {
     #     "new_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096-longsft_16k-SFT-Tulu3-decontaminated",
     #     "old_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-fineweb-edu-1.4t-300B-4096-4096-longsft_16k",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # {
+    #     "new_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-dclm-300B-4096-SFT-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-dclm-300B-4096",
+    #     "size": ModelSize.S1_7B,
+    # },
+
+    # {
+    #     "new_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-dclm-300B-4096-longsft_16k-SFT-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/open-sci-ref-v0.02-1.7b-dclm-300B-4096-longsft_16k",
     #     "size": ModelSize.S1_7B,
     # },
 
@@ -280,11 +299,11 @@ MODELS: List[Dict[str, Any]] = [
     #     "size": ModelSize.S1_7B,
     # },
 
-    {
-        "new_id": "ali-elganzory/1.7b-MixtureVitae-web_curated-100BT-longsft_16k-SFT-Tulu3-decontaminated",
-        "old_id": "ontocord/1.7b-MixtureVitae-web_curated-100BT-longsft_16k",
-        "size": ModelSize.S1_7B,
-    },
+    # {
+    #     "new_id": "ali-elganzory/1.7b-MixtureVitae-web_curated-100BT-longsft_16k-SFT-Tulu3-decontaminated",
+    #     "old_id": "ontocord/1.7b-MixtureVitae-web_curated-100BT-longsft_16k",
+    #     "size": ModelSize.S1_7B,
+    # },
 
     # #### Not Decontaminated ####
 
@@ -314,17 +333,24 @@ MODELS: List[Dict[str, Any]] = [
     #     "size": ModelSize.S0_4B,
     # },
 
-    {
-        "new_id": "ali-elganzory/Baguettotron-longsft_16k-SFT-Tulu3-decontaminated",
-        "old_id": "ontocord/Baguettotron-longsft_16k",
-        "size": ModelSize.S0_4B,
-    },
+    # {
+    #     "new_id": "ali-elganzory/Baguettotron-longsft_16k-SFT-Tulu3-decontaminated",
+    #     "old_id": "ontocord/Baguettotron-longsft_16k",
+    #     "size": ModelSize.S0_4B,
+    # },
 
-    {
-        "new_id": "ali-elganzory/0.4b-mixturevitae-v1-decontaminated-300B-4096-longsft_16k-SFT-Tulu3-decontaminated",
-        "old_id": "ontocord/0.4b-mixturevitae-v1-decontaminated-300B-4096-longsft_16k",
-        "size": ModelSize.S0_4B,
-    }
+    # {
+    #     "new_id": "ali-elganzory/0.4b-mixturevitae-v1-decontaminated-300B-4096-longsft_16k-SFT-Tulu3-decontaminated",
+    #     "old_id": "ontocord/0.4b-mixturevitae-v1-decontaminated-300B-4096-longsft_16k",
+    #     "size": ModelSize.S0_4B,
+    # }
+
+    #### Merged ####
+    # {
+    #     "new_id": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-16k-merged-SFT-Tulu3-decontaminated",
+    #     "old_id": "ali-elganzory/1.7b-MixtureVitae-300BT-v1-decontaminated-16k-merged",
+    #     "size": ModelSize.S1_7B,
+    # },
 ]
 
 ################################################################################
@@ -441,7 +467,7 @@ def write_slurm_script(
         slurm_account=SLURM_ACCOUNT,
         num_nodes=NUM_NODES,
         num_gpus=NUM_GPUS,
-        cpus_per_task=SLURM_CPUS_PER_TASK,
+        cpus_per_gpu=SLURM_CPUS_PER_GPU,
         mail_user=SLURM_MAIL_USER,
         repo_root_abs=repo_root_abs,
         run_dir_posix=run_posix,

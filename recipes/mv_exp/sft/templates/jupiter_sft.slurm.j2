@@ -8,7 +8,7 @@
 #SBATCH --nodes={{ num_nodes }}
 #SBATCH --ntasks-per-node=1
 #SBATCH --gres=gpu:{{ num_gpus }}
-#SBATCH --cpus-per-task={{ cpus_per_task }}
+#SBATCH --cpus-per-gpu={{ cpus_per_gpu }}
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user={{ mail_user }}
 #SBATCH --open-mode=append
@@ -116,6 +116,7 @@ export CMD="scripts/sft.py --config {{ recipe_path_abs }}"
 # RUN IT
 # --ntasks=$NUM_NODES means "Run 1 copy of this command per node"
 # --kill-on-bad-exit=1 means "If one node crashes, kill them all"
+export SRUN_CPUS_PER_TASK={% endraw %}{{ cpus_per_gpu * num_gpus }}{% raw %}
 srun --ntasks=$NUM_NODES --export=ALL --wait=60 --kill-on-bad-exit=1 bash -c "$LAUNCHER $CMD" &
 
 CHILD_PID=$!
