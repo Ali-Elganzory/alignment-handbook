@@ -1,0 +1,16 @@
+{%- for message in messages -%}
+	{%- if message["role"] == "system" -%}
+		{{- "<|system|>\n" + message["content"] + "\n" -}}
+	{%- elif message["role"] == "user" -%}
+		{{- "<|user|>\n" + message["content"] + "\n" -}}
+	{%- elif message["role"] == "assistant" -%}
+		{%- if not loop.last -%}
+			{{- "<|assistant|>\n" -}}{% generation %}{{- message["content"] + eos_token -}}{% endgeneration %}{{- "\n" -}}
+		{%- else -%}
+			{{- "<|assistant|>\n" -}}{% generation %}{{- message["content"] + eos_token -}}{% endgeneration %}
+		{%- endif -%}
+	{%- endif -%}
+	{%- if loop.last and add_generation_prompt -%}
+		{{- "<|assistant|>\n" -}}
+	{%- endif -%}
+{%- endfor -%}
