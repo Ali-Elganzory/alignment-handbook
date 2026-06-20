@@ -101,6 +101,7 @@ class GPUType(Enum):
 
 # Tulu 3 chat template
 CHAT_TEMPLATE = open(_TEMPLATE_DIR / "chat.j2", "r").read()
+CHAT_TEMPLATE_MASKED = open(_TEMPLATE_DIR / "chat_masked.j2", "r").read()
 
 ADDITIONAL_SPECIAL_TOKENS = [
     "<|system|>",
@@ -389,6 +390,7 @@ def create_recipe(
     model: Dict[str, Any],
     mixture: Dict[str, Any],
     gpu_type: GPUType,
+    masked: bool = False,
 ) -> dict:
     config = deepcopy(make_base_config())
     config["dataset_mixture"]["datasets"] = mixture["datasets"]
@@ -396,7 +398,12 @@ def create_recipe(
     config["gradient_accumulation_steps"] = gpu_type.accumulation_steps(model["size"])
     config["model_name_or_path"] = model["old_id"]
 
-    config["hub_model_id"] = model["new_id"]
+    if masked:
+        config["chat_template"] = CHAT_TEMPLATE_MASKED
+        config["assistant_only_loss"] = True
+
+    suffix = "-masked" if masked else ""
+    config["hub_model_id"] = model["new_id"] + suffix
     config["hub_strategy"] = "every_save"
 
     if "max_length" in model:
@@ -404,7 +411,7 @@ def create_recipe(
 
     model_slug = sanitize_model_name(model["old_id"])
     config["output_dir"] = (
-        f"results{'_debug' if DEBUG_MODE else ''}/sft/{model_slug}_{mixture['name']}_{gpu_type.value}"
+        f"results{'_debug' if DEBUG_MODE else ''}/sft/{model_slug}_{mixture['name']}_{gpu_type.value}{suffix}"
     )
 
     return config
@@ -614,6 +621,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Verbose prefetch logging.",
     )
+    parser.add_argument(
+        "--masked",
+        action="store_true",
+        help="Use chat_masked.j2 and set assistant_only_loss=True.",
+    )
     return parser.parse_args()
 
 
@@ -642,7 +654,7 @@ def main() -> None:
 
     for model in models_to_process:
         for gpu_type in GPUType:
-            recipe = create_recipe(model, DATA_MIXTURE, gpu_type)
+            recipe = create_recipe(model, DATA_MIXTURE, gpu_type, masked=args.masked)
             run_dir = Path(recipe["output_dir"]).resolve()
             run_dir.mkdir(parents=True, exist_ok=True)
             (run_dir / "slurm").mkdir(parents=True, exist_ok=True)
